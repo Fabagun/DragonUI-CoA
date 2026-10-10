@@ -1,10 +1,10 @@
 ## Interface: 30300
-## Title: |cff1784d1DragonUI-CoA|r
+## Title: |cff1784d1DragonUI|r |cffff2020C|r|cff1784d1o|r|cffff2020A|r |cffffffffEdition|r
 ## Notes: |cffcaf7faDragonflight-style UI for 3.3.5a with mixed third-party licensing|r
-## Version: 3.1.4
+## Version: 4.0.0
 ## Author: PentSec, NeticSoul
 ## SavedVariables: DragonUIDB
-## OptionalDeps: Blizzard_TimeManager, Details
+## OptionalDeps: Blizzard_TimeManager
 ## X-License: MIT for project-authored code; Blizzard art, fonts and bundled libraries keep their own terms (see THIRD_PARTY_NOTICES)
 ## X-oUF: DragonUF
 ## X-IconTexture: Interface\AddOns\DragonUI\DragonUI

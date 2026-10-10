@@ -1,8 +1,8 @@
 ## Interface: 30300
-## Title: |cff1784d1DragonUI|r |cffffffffOptions|r
+## Title: |cff1784d1DragonUI|r |cffff2020C|r|cff1784d1o|r|cffff2020A|r |cffffffffOptions|r
 ## Notes: Configuration UI for DragonUI
 ## Author: DragonUI Team
-## Version: 3.1.4
+## Version: 4.0.0
 ## LoadOnDemand: 1
 ## Dependencies: DragonUI
 ## X-License: MIT for project-authored code; Blizzard art, fonts and bundled libraries keep their own terms (see THIRD_PARTY_NOTICES)
@@ -41,7 +41,6 @@ panel\tab_panels.lua
 panel\tab_auras.lua
 panel\tab_bags.lua
 panel\tab_bnettoast.lua
-panel\tab_detailsskin.lua
 panel\tab_worldmap.lua
 panel\tab_chat.lua
 panel\tab_profiles.lua
