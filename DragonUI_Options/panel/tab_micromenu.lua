@@ -72,13 +72,13 @@ local function BuildMicromenuTab(scroll)
         label = LO["Columns"],
         desc = LO["Number of micromenu button columns. Set to 1 for a vertical stack."],
         getFunc = function()
-            return C:GetDBValue("micromenu." .. modeKey() .. ".columns") or 12
+            return C:GetDBValue("micromenu." .. modeKey() .. ".columns") or 14
         end,
         setFunc = function(val)
             C:SetDBValue("micromenu." .. modeKey() .. ".columns", val)
             if addon.RefreshMicromenu then addon.RefreshMicromenu() end
         end,
-        min = 1, max = 12, step = 1,
+        min = 1, max = 14, step = 1,
         width = 200,
     })
 

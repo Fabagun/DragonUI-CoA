@@ -455,7 +455,7 @@ local defaults = {
                 x_position = 5,
                 y_position = -54,
                 icon_spacing = 15, -- Migrated from old stride to padding on first load
-                columns = 12, -- 1 = vertical; high = single row
+                columns = 14, -- 1 = vertical; high = single row
                 invert_order = false,
             },
 
@@ -465,7 +465,7 @@ local defaults = {
                 x_position = -113,
                 y_position = -53,
                 icon_spacing = 26, -- Migrated from old stride to padding on first load
-                columns = 12, -- 1 = vertical; high = single row
+                columns = 14, -- 1 = vertical; high = single row
                 invert_order = false,
             }
         },

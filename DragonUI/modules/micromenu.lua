@@ -1830,7 +1830,7 @@ local function GetMicroLayoutMetrics(config, useGrayscale, numButtons)
     end
     local hStep = buttonWidth + pad
     local vStep = buttonHeight + pad
-    local columns = math.floor(tonumber(config.columns) or 12)
+    local columns = math.floor(tonumber(config.columns) or 14)
     if columns < 1 then
         columns = 1
     end

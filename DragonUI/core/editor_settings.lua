@@ -1332,10 +1332,10 @@ E.Register("micromenu", { settings = {
             SetDB(MicroPrefix() .. ".icon_spacing", value)
             Deferred(R.micromenu)
         end }),
-    Slider(T("Columns"), "micromenu.columns", 1, 12, 1, R.micromenu, {
+    Slider(T("Columns"), "micromenu.columns", 1, 14, 1, R.micromenu, {
         resize = true,
         disabled = GrayscalePending,
-        get = function() return GetNumber(MicroPrefix() .. ".columns", 12) end,
+        get = function() return GetNumber(MicroPrefix() .. ".columns", 14) end,
         set = function(value)
             SetDB(MicroPrefix() .. ".columns", value)
             Deferred(R.micromenu)
