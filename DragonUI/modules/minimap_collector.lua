@@ -29,6 +29,7 @@ local mathmax, mathmin, mathfloor, mathceil =
 local mathrad, mathdeg, mathcos, mathsin, mathpi =
       math.rad, math.deg, math.cos, math.sin, math.pi
 local mathatan2, mathatan = math.atan2, math.atan
+local mathabs = math.abs
 local strlower, tsort = string.lower, table.sort
 
 -- ----------------------------------------------------------------------------
@@ -416,25 +417,29 @@ local function GetMinimapScale()
     return s
 end
 
--- Square minimap border offset: nudge the collector button 10px left / 3px up
--- only while the square border is active; native rounded mode keeps the default
--- placement. Screen px are converted to the map's local units so the nudge looks
--- identical at any minimap scale.
-local function GetSquareButtonOffset()
-    if not (deps.GetSquareBorderActive and deps.GetSquareBorderActive()) then
-        return 0, 0
-    end
-    return -11, 3
-end
-
 local function PositionByAngle(btn, angle)
     if not btn or not Minimap then return end
     local n = NormalizeAngle(angle)
     local r = GetOrbitRadius(btn)
     local rad = mathrad(n)
-    local dx, dy = GetSquareButtonOffset()
+    local cosA = mathcos(rad)
+    local sinA = mathsin(rad)
+    local x, y
+    if GetMinimapShape and GetMinimapShape() == "SQUARE" then
+        local maxCoord = mathmax(mathabs(cosA), mathabs(sinA))
+        if maxCoord > 0 then
+            x = (cosA / maxCoord) * r
+            y = (sinA / maxCoord) * r
+        else
+            x = cosA * r
+            y = sinA * r
+        end
+    else
+        x = cosA * r
+        y = sinA * r
+    end
     btn:ClearAllPoints()
-    btn:SetPoint("CENTER", Minimap, "CENTER", mathcos(rad) * r + dx, mathsin(rad) * r + dy)
+    btn:SetPoint("CENTER", Minimap, "CENTER", x, y)
     btn.DragonUI_Angle = n
 end
 
@@ -1312,9 +1317,8 @@ local function ApplyClassicStyle(btn)
     btn.DragonUI_DragMoved = false
     btn:SetSize(21, 21)
     btn:SetScale(1)
-    local dx, dy = GetSquareButtonOffset()
     btn:ClearAllPoints()
-    btn:SetPoint("RIGHT", Minimap, "LEFT", 16.5 + dx, -2 + dy)
+    btn:SetPoint("RIGHT", Minimap, "LEFT", 16.5, -2)
 
     if btn.icon then
         btn.icon:ClearAllPoints()
