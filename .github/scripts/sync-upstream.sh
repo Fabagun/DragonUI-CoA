@@ -18,9 +18,10 @@
 #  - Every run ALSO re-checks commits whose issue is still open: when several commits touch the same
 #    file, resolving the last one often absorbs the earlier ones without leaving their trailer, so
 #    their issue would stay open (and masked) forever. If such a commit is now superseded (its
-#    change is already on the default branch) or simply no longer conflicts, its issue and draft PR
-#    are closed. Only branches still exactly as the bot pushed them are deleted; a branch with any
-#    human work on it is never closed, never force-pushed and only logged.
+#    change is already on the default branch), its issue and draft PR are closed. If it no longer
+#    conflicts, its draft PR retires and the commit is retried right away; its issue is closed only
+#    once the change is really in the sync PR. Only branches still exactly as the bot pushed them
+#    are deleted; a branch with any human work on it is never closed, never force-pushed, only logged.
 #  - Discord gets ONE message per run, and only when something actually changed.
 #
 set -Eeuo pipefail
@@ -387,8 +388,10 @@ rebuild_conflict_branch() {
 }
 
 # Re-examines every commit that still has an OPEN "skipped" issue and retires what no longer needs a
-# human: the change already reached the default branch (superseded) or it now applies cleanly. A
-# commit that still conflicts, or whose branch a human already touched, is left completely alone.
+# human: the change already reached the default branch (superseded), or it no longer conflicts and can
+# be handed back to the candidate loop. A commit that still conflicts, or whose branch a human already
+# touched, is left completely alone. "No longer conflicts" only un-masks the commit here: its issue is
+# closed later, and only once the commit really made it into the sync PR.
 reevaluate_open_issues() {
   local line n title s7 c st note
   git rev-list "upstream/${UPSTREAM_BRANCH}" > "$TMP/upstream_shas" 2>/dev/null || true
@@ -410,14 +413,9 @@ reevaluate_open_issues() {
     REEVALUATED=$((REEVALUATED + 1))
     st="$(probe_cached "$c")"
     case "$st" in
-      empty|clean)
-        if [ "$st" = empty ]; then
-          note="Superseded: its changes are already on ${DEFAULT_BRANCH}."
-          log "issue #${n}: ${s7} is superseded, its changes are already on ${DEFAULT_BRANCH}"
-        else
-          note="No longer conflicts against ${DEFAULT_BRANCH}; it will be picked up by the sync PR."
-          log "issue #${n}: ${s7} no longer conflicts against ${DEFAULT_BRANCH}; it goes into the sync PR"
-        fi
+      empty)
+        note="Superseded: its changes are already on ${DEFAULT_BRANCH}."
+        log "issue #${n}: ${s7} is superseded, its changes are already on ${DEFAULT_BRANCH}"
         if ! close_conflict_if_intact "$s7" "$note"; then
           log "issue #${n} left open as well: conflict/${s7} carries manual work"
           continue
@@ -429,6 +427,21 @@ reevaluate_open_issues() {
         fi
         # No longer masked for this run, so the candidate loop reconsiders the commit right now.
         remove_known_skipped "$c"
+        ;;
+      clean)
+        # "Applies cleanly against the default branch" is not the same as "will enter the sync PR":
+        # the candidate loop stacks the picks on top of each other, so this commit can still collide
+        # with the ones already pending in the PR. Closing the issue here un-masked the commit, the
+        # pick then conflicted on the sync branch, skip_commit found no dedup entry and opened a fresh
+        # issue for it -- every run, forever. So the issue stays open: the commit is only retried right
+        # away, and the issue is closed further down, and only if it really made it into the PR.
+        if ! close_conflict_if_intact "$s7" "No longer conflicts against ${DEFAULT_BRANCH}; retrying it."; then
+          log "issue #${n} left open as well: conflict/${s7} carries manual work"
+          continue
+        fi
+        log "issue #${n}: ${s7} no longer conflicts against ${DEFAULT_BRANCH}; retrying it in this run"
+        printf '%s\n' "$c" >> "$TMP/force_retry"
+        printf '%s %s\n' "$n" "$s7" >> "$TMP/reeval_clean"
         ;;
       conflict)
         log "issue #${n}: ${s7} still conflicts against ${DEFAULT_BRANCH}; leaving as is"
@@ -589,6 +602,9 @@ log "candidates after baseline: ${#CANDIDATES[@]}"
 PICKED=()
 KNOWN=0
 ALREADY=0
+# sha7 of every commit that entered the sync branch this run (picked, or found applied by the pick):
+# only those can resolve a re-evaluated issue. See the closing block after the PR bookkeeping.
+: > "$TMP/entered"
 
 for c in "${CANDIDATES[@]}"; do
   if grep -qx "$c" "$TMP/applied"; then ALREADY=$((ALREADY + 1)); continue; fi
@@ -596,7 +612,11 @@ for c in "${CANDIDATES[@]}"; do
 
   retrying=false
   if [ -n "$RETRY_SHA" ] && [[ "$c" == "$RETRY_SHA"* ]]; then retrying=true; fi
-  if [ "$retrying" = false ] && known_skipped "$c"; then KNOWN=$((KNOWN + 1)); continue; fi
+  # A commit re-evaluated as "clean" this run is retried right away even though its issue is still
+  # open (see reevaluate_open_issues): skipping it here would throw the whole re-check away.
+  forced=false
+  if [ -s "$TMP/force_retry" ] && grep -qxF -- "$c" "$TMP/force_retry"; then forced=true; fi
+  if [ "$retrying" = false ] && [ "$forced" = false ] && known_skipped "$c"; then KNOWN=$((KNOWN + 1)); continue; fi
 
   changed_files="$(git diff-tree --no-commit-id --name-only -r "$c")"
   if grep -q '^\.github/workflows/' <<< "$changed_files"; then
@@ -624,6 +644,7 @@ for c in "${CANDIDATES[@]}"; do
       continue
     fi
     PICKED+=("$c")
+    printf '%s\n' "${c:0:7}" >> "$TMP/entered"
   else
     unmerged="$(git diff --name-only --diff-filter=U || true)"
     tail_log="$(tail -n 5 "$TMP/pick.log")"
@@ -633,6 +654,7 @@ for c in "${CANDIDATES[@]}"; do
       skip_commit "$c" "merge conflict" "$unmerged"
     elif grep -qi 'empty' "$TMP/pick.log"; then
       log "already applied (empty cherry-pick): ${c:0:7}"
+      printf '%s\n' "${c:0:7}" >> "$TMP/entered"
       ALREADY=$((ALREADY + 1))
     else
       skip_commit "$c" "cherry-pick failed" "$tail_log"
@@ -750,8 +772,27 @@ else
   fi
 fi
 
+# A commit re-evaluated as "clean" that actually entered the sync PR this run (or turned out to be
+# applied already) is genuinely resolved: close the issue that was waiting on it. A commit that
+# collided with a pending pick is NOT in $TMP/entered, so its issue stays open, and the next run
+# reuses it instead of opening a duplicate.
+if [ -s "$TMP/reeval_clean" ] && [ -s "$TMP/entered" ]; then
+  while read -r n s7; do
+    [ -n "$s7" ] || continue
+    if ! grep -qxF -- "$s7" "$TMP/entered"; then continue; fi
+    if is_dry; then
+      log "(dry-run) would close issue #${n} (${s7} is now in the sync PR)"
+    elif gh issue close "$n" -R "$REPO" --reason completed \
+           --comment "No longer conflicts against ${DEFAULT_BRANCH}; its change is now in the sync PR." >/dev/null 2>&1; then
+      log "issue #${n} closed: ${s7} is now in the sync PR"
+    else
+      log "warning: could not close issue #${n}"
+    fi
+  done < "$TMP/reeval_clean"
+fi
+
 if [ "${#SKIPPED[@]}" -gt 0 ]; then
-  MSGS+=("⏭️ **${#SKIPPED[@]} commit(s) skipped** (one issue opened for each):")
+  MSGS+=("⏭️ **${#SKIPPED[@]} commit(s) skipped** (one open issue per commit):")
   for s in "${SKIPPED[@]:0:8}"; do MSGS+=("- ${s}"); done
   if [ "$DEFERRED" -gt 0 ]; then
     MSGS+=("(${DEFERRED} without an issue yet: cap of ${MAX_ISSUES} per run, the rest come next run)")
