@@ -284,10 +284,17 @@ probe_pick() {
 
 # Same as probe_pick(), but the verdict is remembered for the rest of the run: a commit is probed at
 # most ONCE per run, whichever code path asks about it.
+#
+# The verdict is written with a redirection, never through a `probe_pick | tee` pipeline: that would
+# put the producer in a subshell and let a partial file become the cached verdict. The key is the
+# full sha, so two commits sharing a 7-char prefix cannot read each other's verdict. Any unexpected
+# failure degrades to "error", which every caller treats as "leave it alone".
 probe_cached() {
-  local c="$1" f="$TMP/verdict-${1:0:7}"
+  local c="$1" f="$TMP/verdict-${1}" st
   if [ -f "$f" ]; then cat "$f"; return 0; fi
-  probe_pick "$c" | tee "$f"
+  st="$(probe_pick "$c")" || st=error
+  printf '%s\n' "$st" > "$f"
+  printf '%s\n' "$st"
   return 0
 }
 
@@ -304,7 +311,7 @@ remove_known_skipped() {
 # intact. Returns 0 when there is nothing left to protect or the branch was retired, 1 when it was
 # left alone because it carries manual work.
 close_conflict_if_intact() {
-  local s7="$1" comment="$2" br="conflict/${s7}" pr=""
+  local s7="$1" comment="$2" br="conflict/${1:0:7}" pr=""
   if ! git rev-parse -q --verify "origin/${br}" >/dev/null 2>&1; then return 0; fi
   if ! branch_intact "origin/${br}"; then
     log "${br}: branch has manual work, leaving as is"
@@ -328,7 +335,7 @@ close_conflict_if_intact() {
 # and only while that branch is intact. When the commit now applies cleanly (or is empty), the branch
 # and its draft PR are retired instead. Returns 1 when the branch was retired, 0 otherwise.
 rebuild_conflict_branch() {
-  local c="$1" s7="${1:0:7}" br="conflict/${s7}" wt="$TMP/rebuild-${s7}" st expected
+  local c="$1" s7="${1:0:7}" br="conflict/${1:0:7}" wt="$TMP/rebuild-${1:0:7}" st expected
   expected="$(git ls-remote --heads origin "refs/heads/${br}" 2>/dev/null || true)"
   expected="${expected%%$'\n'*}"
   expected="${expected%%$'\t'*}"
