@@ -598,6 +598,7 @@ L["%s's Bank"] = true
 L["Bags"] = true
 L["Bag Skin"] = true
 L["Retail-style textures for bags (Combuctor + default)"] = true
+L["Bank"] = true
 L["|cff00ff00Left-Click|r to toggle bag display"] = true
 L["|cff00ff00Right-Click|r to toggle inventory"] = true
 L["|cff00ff00Right-Click|r to toggle bank"] = true
