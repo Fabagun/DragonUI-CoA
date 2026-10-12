@@ -45,11 +45,6 @@ local function IsMinimapSystemActive()
     return IsModuleEnabled() and MinimapModule.applied
 end
 
-local function IsSquareMinimap()
-    local minimapConfig = addon.db and addon.db.profile and addon.db.profile.minimap
-    return minimapConfig and minimapConfig.square_border == true
-end
-
 local function IsDragonUIMinimapControlling()
     return MinimapModule.applied or MinimapModule._initializingMinimapSystem
 end
@@ -73,8 +68,6 @@ local BORDER_TO_MAP_RATIO = 284 / mapUnscaledWidth
 local DRAGONUI_MINIMAP_MASK = "Interface\\AddOns\\DragonUI\\Textures\\Minimap\\uiminimapmask.tga"
 local VANILLA_MINIMAP_MASK = "Textures\\MinimapMask"
 local SQUARE_MINIMAP_MASK = "Interface\\Buttons\\WHITE8X8"
-local SQUARE_BORDER_TEXTURE = "Interface\\AddOns\\DragonUI\\Textures\\Minimap\\MinimapSquareBorder.blp"
-local ROUND_BORDER_TEXTURE = "Interface\\AddOns\\DragonUI\\Textures\\Minimap\\MinimapBorder.blp"
 local DRAGONUI_MINIMAP_CIRCLE = "Interface\\AddOns\\DragonUI\\Textures\\Minimap\\uiminimapborder.tga"
 local FOREVER_MINIMAP_MASK = "Interface\\AddOns\\DragonUI\\Textures\\Minimap\\forever_mask.tga"
 local FOREVER_MINIMAP_CIRCLE = "Interface\\AddOns\\DragonUI\\Textures\\Minimap\\forever_circle"
@@ -229,6 +222,11 @@ local function IsForeverStyle()
     return minimapConfig ~= nil and minimapConfig.style == "forever"
 end
 
+local function IsSquareStyle()
+    local minimapConfig = addon.db and addon.db.profile and addon.db.profile.minimap
+    return minimapConfig ~= nil and minimapConfig.style == "square"
+end
+
 -- Forever units to MinimapBackdrop units; ReplaceBlizzardFrame scales the backdrop back to the cluster's.
 local function ForeverScale()
     return Minimap:GetWidth() / MinimapBackdrop:GetScale() / FOREVER_MAP_SIZE
@@ -272,14 +270,14 @@ local function UpdateMinimapMaskForRotation()
     end
 
     local minimapConfig = addon.db and addon.db.profile and addon.db.profile.minimap
-    local desiredMask
-    if IsSquareMinimap() then
-        desiredMask = SQUARE_MINIMAP_MASK
-    else
-        local useVanillaMask = minimapConfig and minimapConfig.animated_border_hide_dragonui_border == true
-        desiredMask = useVanillaMask and VANILLA_MINIMAP_MASK
-            or (IsForeverStyle() and FOREVER_MINIMAP_MASK or DRAGONUI_MINIMAP_MASK)
-    end
+    local isSquare = IsSquareStyle()
+    local useVanillaMask = not isSquare
+        and minimapConfig
+        and minimapConfig.animated_border_enabled == true
+        and minimapConfig.animated_border_hide_dragonui_border == true
+    local desiredMask = isSquare and SQUARE_MINIMAP_MASK
+        or (useVanillaMask and VANILLA_MINIMAP_MASK
+            or (IsForeverStyle() and FOREVER_MINIMAP_MASK or DRAGONUI_MINIMAP_MASK))
 
     if MinimapModule.activeMask ~= desiredMask then
         Minimap:SetMaskTexture(desiredMask)
@@ -597,9 +595,98 @@ local function RescaleLaunchers()
     end
 end
 
+local function GetLibDBIcon()
+    if not LibStub or not LibStub.GetLibrary then return nil end
+    local ok, libDBIcon = pcall(LibStub.GetLibrary, LibStub, "LibDBIcon-1.0", true)
+    if ok and libDBIcon and type(libDBIcon.SetButtonRadius) == "function" then
+        return libDBIcon
+    end
+end
+
+-- LibDBIcon repositions every button with the current shape when its radius is set.
+local function SyncLibDBIconShape()
+    local shape = GetMinimapShape and GetMinimapShape() or "ROUND"
+    if MinimapModule.libDBIconShape == shape then return end
+    MinimapModule.libDBIconShape = shape
+    local libDBIcon = GetLibDBIcon()
+    local radius = libDBIcon and tonumber(libDBIcon.radius)
+    if radius then
+        libDBIcon:SetButtonRadius(radius)
+    end
+end
+
+local function EnsureSquareBorder()
+    if not MinimapModule.squareBorder then
+        local border = addon.ForeverUI.AttachBoxBorder(Minimap)
+        border:SetFrameLevel(Minimap:GetFrameLevel() + 5)
+        border:EnableMouse(false)
+        MinimapModule.squareBorder = border
+    end
+    return MinimapModule.squareBorder
+end
+
+local function UpdateMailPosition()
+    if not MiniMapMailFrame or not MiniMapTracking then return end
+    MiniMapMailFrame:ClearAllPoints()
+    if IsSquareStyle() then
+        MiniMapMailFrame:SetPoint("RIGHT", MiniMapTracking, "LEFT", -3, 0)
+        MiniMapMailFrame:SetFrameLevel(MiniMapTracking:GetFrameLevel() + 5)
+    else
+        MiniMapMailFrame:SetPoint("TOP", MiniMapTracking, "BOTTOM", 0, -3)
+        MiniMapMailFrame:SetFrameLevel(MiniMapTracking:GetFrameLevel())
+    end
+end
+
+local function UpdateCornerIconsPosition()
+    UpdateMailPosition()
+
+    local isSquare = IsSquareStyle()
+
+    local difficulty = MiniMapInstanceDifficulty
+    if difficulty then
+        difficulty:ClearAllPoints()
+        if isSquare then
+            difficulty:SetPoint("TOPRIGHT", Minimap, "TOPRIGHT", -4, -4)
+            difficulty:SetScale(0.85)
+            difficulty:SetFrameLevel(Minimap:GetFrameLevel() + 10)
+        else
+            if MinimapBorderTop then
+                difficulty:SetPoint("TOP", MinimapBorderTop, 'BOTTOMRIGHT', -20, 6)
+            else
+                difficulty:SetPoint("TOPRIGHT", Minimap, 'TOPRIGHT', -20, 6)
+            end
+            difficulty:SetScale(0.85)
+        end
+    end
+
+    local pvpButton = MiniMapBattlefieldFrame
+    if pvpButton then
+        pvpButton:ClearAllPoints()
+        if isSquare then
+            pvpButton:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", -4, 4)
+            pvpButton:SetFrameLevel(Minimap:GetFrameLevel() + 10)
+        else
+            pvpButton:SetPoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", 0, 18)
+        end
+    end
+end
+
+local function UpdateSquareStyle()
+    local isSquare = IsSquareStyle()
+    if isSquare then
+        local border = EnsureSquareBorder()
+        border:Show()
+    elseif MinimapModule.squareBorder then
+        MinimapModule.squareBorder:Hide()
+    end
+    UpdateCornerIconsPosition()
+end
+
 local function UpdateForeverStyle()
     local circle = Minimap and Minimap.Circle
     if not circle then return end
+
+    UpdateSquareStyle()
 
     local active = IsForeverActive()
     if active ~= (MinimapModule.foreverShown == true) then
@@ -612,6 +699,14 @@ local function UpdateForeverStyle()
         if MinimapModule.borderFrame then
             MinimapModule.borderFrame._duiLastAppliedAngle = nil
         end
+    end
+
+    if IsSquareStyle() then
+        circle:Hide()
+        if foreverFrame then foreverFrame:Hide() end
+        SyncInstanceDifficultyLevel(false)
+        SyncLibDBIconShape()
+        return
     end
 
     if active then
@@ -627,12 +722,22 @@ local function UpdateForeverStyle()
         frame.dielIcon:SetSinglePoint("CENTER", Minimap, "CENTER", dielX, dielY)
     end
 
+    local minimapConfig = addon.db and addon.db.profile and addon.db.profile.minimap
+    local decorationsActive = minimapConfig and minimapConfig.animated_border_enabled == true
+        and addon.MinimapDecorations and addon.MinimapDecorations.applied
+    local hideBorder = decorationsActive and minimapConfig.animated_border_hide_dragonui_border == true
+    if not hideBorder and not IsHybridMinimapModeActive() then
+        circle:SetAlpha(1)
+        circle:Show()
+    end
+
     UpdateMinimapCircleSize()
     SyncForeverOverlay()
     SyncInstanceDifficultyLevel(active)
     if GetCVar("rotateMinimap") ~= "1" then
         ResetRingRotation()
     end
+    SyncLibDBIconShape()
 end
 
 local function GetStyleOffsets()
@@ -936,13 +1041,23 @@ local function ReplaceBlizzardFrame(frame)
 
     local minimapBattlefieldFrame = MiniMapBattlefieldFrame
     minimapBattlefieldFrame:ClearAllPoints()
-    minimapBattlefieldFrame:SetPoint("BOTTOMLEFT", 8, 2)
+    if IsSquareStyle() then
+        minimapBattlefieldFrame:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", -4, 4)
+        minimapBattlefieldFrame:SetFrameLevel(Minimap:GetFrameLevel() + 10)
+    else
+        minimapBattlefieldFrame:SetPoint("BOTTOMLEFT", 8, 2)
+    end
 
     if not isHybridMode then
         -- DragonUI positioning for elements anchored to the border top
         local minimapInstanceFrame = MiniMapInstanceDifficulty
         minimapInstanceFrame:ClearAllPoints()
-        minimapInstanceFrame:SetPoint("TOP", MinimapBorderTop, 'BOTTOMRIGHT', -20, 6)
+        if IsSquareStyle() then
+            minimapInstanceFrame:SetPoint("TOPRIGHT", Minimap, "TOPRIGHT", -4, -4)
+            minimapInstanceFrame:SetFrameLevel(Minimap:GetFrameLevel() + 10)
+        else
+            minimapInstanceFrame:SetPoint("TOP", MinimapBorderTop, 'BOTTOMRIGHT', -20, 6)
+        end
         minimapInstanceFrame:SetScale(0.85) -- Fixed scale for difficulty icon
 
         local minimapTracking = MiniMapTracking
@@ -951,10 +1066,9 @@ local function ReplaceBlizzardFrame(frame)
         minimapTracking:SetSize(26, 24)
 
         local minimapMailFrame = MiniMapMailFrame
-        minimapMailFrame:ClearAllPoints()
-        minimapMailFrame:SetPoint("TOP", minimapTracking, "BOTTOM", 0, -3)
         minimapMailFrame:SetSize(20, 14)
         minimapMailFrame:SetHitRectInsets(0, 0, 0, 0)
+        UpdateCornerIconsPosition()
 
         local minimapMailIconTexture = MiniMapMailIcon
         minimapMailIconTexture:SetAllPoints(minimapMailFrame)
@@ -1121,7 +1235,9 @@ local function ReplaceBlizzardFrame(frame)
         end
 
         if not isHybridMode then
-            _G.GetMinimapShape = function() return IsSquareMinimap() and "SQUARE" or "ROUND" end
+            _G.GetMinimapShape = function()
+                return IsSquareStyle() and "SQUARE" or "ROUND"
+            end
         end
     end
 
@@ -1153,7 +1269,12 @@ local function ReplaceBlizzardFrame(frame)
             HookForeverMirror(Minimap.Circle)
         end
         -- A restore hid it; decorations re-hide it in UpdateSettings if they own the border.
-        Minimap.Circle:Show()
+        if not IsSquareStyle() then
+            Minimap.Circle:SetAlpha(1)
+            Minimap.Circle:Show()
+        else
+            Minimap.Circle:Hide()
+        end
         UpdateMinimapCircleSize()
         UpdateForeverStyle()
 
@@ -1391,7 +1512,7 @@ local function CreateMinimapBorderFrame(width, height)
     do
         local texture = minimapBorderFrame:CreateTexture(nil, "BORDER")
         texture:SetAllPoints(minimapBorderFrame)
-        texture:SetTexture(ROUND_BORDER_TEXTURE)
+        texture:SetTexture("Interface\\AddOns\\DragonUI\\Textures\\Minimap\\MinimapBorder.blp")
         texture:SetAlpha(0)
 
         minimapBorderFrame.border = texture
@@ -1399,131 +1520,6 @@ local function CreateMinimapBorderFrame(width, height)
 
     minimapBorderFrame:Hide()
     return minimapBorderFrame
-end
-
--- MinimapSquareBorder.blp is 512x512 with a transparent inner square of 454x454.
-local SQUARE_BORDER_HOLE_FRACTION = 454 / 512
--- Small visual margin so the border ring sits flush around the map instead of
--- clipping it. Expressed as a multiplier on the ideal hole size; tuning here
--- (not via an absolute pixel trim) keeps the result invariant to cluster/UI scale.
-local SQUARE_BORDER_FIT = 1.05
-local SQUARE_MAP_SHRINK = 11
-
--- Size the square border frame so its inner hole exactly matches the minimap
--- on screen, independent of the user's "Scale" (basic settings) and UI scale.
--- Invariant derivation:
---   * borderFrame:SetScale(scale) matches MinimapCluster:SetScale(scale), so the
---     cluster scale cancels between border and map — only the fijo blipScale
---     (1.12) stands between map-local units and border-local units.
---   * map-LOCAL = defaultMapWidth / blipScale               (constant)
---   * border-LOCAL = mapLocal * blipScale * (512/454) * FIT (constant)
---   * frameSize is therefore constant — clusterScale never enters the formula.
--- This mirrors UpdateMinimapCircleSize, where Minimap.Circle is a child of the
--- map so the ratio stays in map-local units; the square border is a UIParent
--- child, so we convert via the fijo blipScale instead.
-local function UpdateSquareBorderFrameSize()
-    local borderFrame = MinimapModule.borderFrame
-    if not borderFrame or not IsSquareMinimap() then return end
-    if not Minimap then return end
-
-    -- The square border keeps a fixed visual size derived from the full/default
-    -- map size, NOT the live map size: the map itself is shrunk to fit inside
-    -- the border (see UpdateMinimapBorderShape), and deriving the border from the
-    -- live map would rescale border + map together, cancelling the shrink.
-    local mapLocalShrunk = (defaultMapWidth / blipScale) - SQUARE_MAP_SHRINK
-
-    -- The square border must render inside the minimap's own strata: the cluster
-    -- lives in BACKGROUND, so keeping the border on UIParent's default MEDIUM
-    -- strata painted it OVER the mail/tracking/collector icons. Move it into the
-    -- map's strata, one level above the map frame, and raise the mail icon one
-    -- more level so the envelope stays visible on top of the border ring.
-    if borderFrame:GetFrameStrata() ~= Minimap:GetFrameStrata() then
-        borderFrame:SetFrameStrata(Minimap:GetFrameStrata())
-    end
-    if borderFrame:GetFrameLevel() <= (Minimap:GetFrameLevel() or 0) then
-        borderFrame:SetFrameLevel((Minimap:GetFrameLevel() or 1) + 1)
-    end
-    if MiniMapMailFrame and MiniMapMailFrame:GetFrameLevel() <= (borderFrame:GetFrameLevel() or 1) then
-        MiniMapMailFrame:SetFrameLevel((borderFrame:GetFrameLevel() or 1) + 1)
-    end
-
-    -- Constant frame size in border-local units. clusterScale and UIScale cancel
-    -- because borderFrame is SetScale'd by the same scale as MinimapCluster.
-    local frameSize = mapLocalShrunk * blipScale * (1 / SQUARE_BORDER_HOLE_FRACTION) * SQUARE_BORDER_FIT
-    if MinimapModule.activeSquareBorderSize ~= frameSize then
-        borderFrame:SetSize(frameSize, frameSize)
-        MinimapModule.activeSquareBorderSize = frameSize
-    end
-end
-
--- Switch between the round DragonUI border (Minimap.Circle + backdrop) and the
--- square border (MinimapSquareBorder.blp) driven by minimap.square_border.
-local function UpdateMinimapBorderShape()
-    if not Minimap or not IsDragonUIMinimapControlling() then return end
-
-    local circle = Minimap.Circle
-    local borderFrame = MinimapModule.borderFrame
-    local borderTexture = borderFrame and borderFrame.border
-    local isSquare = IsSquareMinimap()
-
-    if isSquare then
-        -- Hide the round chrome and show the square border frame instead.
-        -- MinimapBackdrop is intentionally left untouched: hiding it also hides
-        -- its children (MiniMapTracking / MiniMapMailFrame), which is why the
-        -- tracking button disappeared when square was enabled.
-        if circle then circle:Hide() end
-        -- Shrink the minimap ~8px so the square border sits flush around it
-        -- instead of overlapping the map corners.
-        local mapW = (defaultMapWidth / blipScale) - SQUARE_MAP_SHRINK
-        local mapH = (defaultMapHeight / blipScale) - SQUARE_MAP_SHRINK
-        if Minimap:GetWidth() ~= mapW then Minimap:SetWidth(mapW) end
-        if Minimap:GetHeight() ~= mapH then Minimap:SetHeight(mapH) end
-        if borderFrame then
-            if borderTexture then
-                borderTexture:SetTexture(SQUARE_BORDER_TEXTURE)
-                borderTexture:SetAlpha(1)
-                borderTexture:Show()
-            end
-            borderFrame:Show()
-            UpdateSquareBorderFrameSize()
-        end
-        -- Collector must render above the square border frame.
-        local collector = _G["DragonUI_MinimapIconCollector"]
-        if collector then
-            local cl = (borderFrame:GetFrameLevel() or 0) + 50
-            if collector:GetFrameLevel() < cl then
-                collector:SetFrameLevel(cl)
-            end
-        end
-        -- Square mask must follow immediately so a hot toggle doesn't leave the
-        -- round uiminimapmask.tga clipping the square map.
-        UpdateMinimapMaskForRotation()
-        UpdateMinimapBackdropAlignment(false)
-    else
-        -- Restore the round DragonUI border.
-        if circle then circle:Show() end
-        if Minimap then
-            local mapW = defaultMapWidth / blipScale
-            local mapH = defaultMapHeight / blipScale
-            if Minimap:GetWidth() ~= mapW then Minimap:SetWidth(mapW) end
-            if Minimap:GetHeight() ~= mapH then Minimap:SetHeight(mapH) end
-        end
-        if borderFrame then
-            if borderTexture then
-                borderTexture:SetTexture(ROUND_BORDER_TEXTURE)
-                borderTexture:SetAlpha(0)
-                borderTexture:Hide()
-            end
-            if MinimapModule.activeSquareBorderSize then
-                borderFrame:SetSize(232, 232)
-                MinimapModule.activeSquareBorderSize = nil
-            end
-        end
-        -- Restore rotation-driven borderFrame visibility and mask state.
-        if MinimapModule.UpdateRotation then
-            MinimapModule.UpdateRotation()
-        end
-    end
 end
 
 -- Helper: is addon button fade currently enabled?
@@ -1889,19 +1885,11 @@ end
 -- which pushes minimap addon buttons farther from the map edge.
 -- Keep this defensive and minimal: only clamp excessive defaults while DragonUI minimap is active.
 local function NormalizeLibDBIconRadius()
-    if not LibStub or not LibStub.GetLibrary then
-        return
-    end
-
-    local ok, libDBIcon = pcall(LibStub.GetLibrary, LibStub, "LibDBIcon-1.0", true)
-    if not ok or not libDBIcon or type(libDBIcon.SetButtonRadius) ~= "function" then
-        return
-    end
+    local libDBIcon = GetLibDBIcon()
+    if not libDBIcon then return end
 
     local currentRadius = tonumber(libDBIcon.radius)
-    if not currentRadius or currentRadius <= 5 then
-        return
-    end
+    if not currentRadius or currentRadius <= 5 then return end
 
     if MinimapModule.originalStates.LibDBIconRadius == nil then
         MinimapModule.originalStates.LibDBIconRadius = currentRadius
@@ -1912,16 +1900,10 @@ end
 
 local function RestoreLibDBIconRadius()
     local originalRadius = MinimapModule.originalStates.LibDBIconRadius
-    if originalRadius == nil then
-        return
-    end
+    if originalRadius == nil then return end
 
-    if not LibStub or not LibStub.GetLibrary then
-        return
-    end
-
-    local ok, libDBIcon = pcall(LibStub.GetLibrary, LibStub, "LibDBIcon-1.0", true)
-    if ok and libDBIcon and type(libDBIcon.SetButtonRadius) == "function" then
+    local libDBIcon = GetLibDBIcon()
+    if libDBIcon then
         libDBIcon:SetButtonRadius(originalRadius)
     end
 
@@ -1950,7 +1932,6 @@ local function GetConfiguredMinimapCollector()
         ApplyAddonIconSkin = ApplyAddonIconSkin,
         UnskinAddonButton = UnskinAddonButton,
         IsFadeEnabled = IsFadeEnabled,
-        GetSquareBorderActive = IsSquareMinimap,
         fadein = fadein,
         fadeout = fadeout,
         IsForeverActive = IsForeverActive,
@@ -2225,7 +2206,12 @@ local function StylePVPBattlefieldFrame()
 
     local pvpButton = MiniMapBattlefieldFrame
     pvpButton:SetSize(44, 44)
-    pvpButton:SetSinglePoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", 0, 18)
+    if IsSquareStyle() then
+        pvpButton:SetSinglePoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", -4, 4)
+        pvpButton:SetFrameLevel(Minimap:GetFrameLevel() + 10)
+    else
+        pvpButton:SetSinglePoint("BOTTOMLEFT", Minimap, "BOTTOMLEFT", 0, 18)
+    end
     pvpButton:SetNormalTexture("")
     pvpButton:SetPushedTexture("")
 
@@ -2315,9 +2301,7 @@ MinimapModule.UpdateRotation = function()
         UpdateIndoorRotateScale()
         UpdateMinimapCircleSize()
     else
-        -- Square border stays visible regardless of rotation; only the round
-        -- border frame is rotation-driven.
-        if MinimapModule.borderFrame and not IsSquareMinimap() then
+        if MinimapModule.borderFrame then
             MinimapModule.borderFrame:Hide()
         end
         UpdateMinimapMaskForRotation()
@@ -2751,14 +2735,9 @@ function MinimapModule:RestoreMinimapSystem()
     if Minimap and Minimap.Circle then
         Minimap.Circle:Hide()
     end
-    if MinimapBackdrop and self.originalStates.MinimapBackdropShown ~= nil then
-        if self.originalStates.MinimapBackdropShown then
-            MinimapBackdrop:Show()
-        else
-            MinimapBackdrop:Hide()
-        end
+    if self.squareBorder then
+        self.squareBorder:Hide()
     end
-    self.originalStates.MinimapBackdropShown = nil
     if foreverFrame then
         foreverFrame:Hide()
     end
@@ -3050,7 +3029,6 @@ function MinimapModule:UpdateSettings()
         UpdateForeverStyle()
         UpdateMinimapMaskForRotation()
         UpdateMinimapCircleSize()
-        UpdateMinimapBorderShape()
 
         --  APPLY ALL SETTINGS
         self:ApplyAllSettings()
@@ -3248,6 +3226,8 @@ function MinimapModule:ApplyAllSettings()
         Minimap:SetPlayerTextureHeight(settings.player_arrow_size)
         Minimap:SetPlayerTextureWidth(settings.player_arrow_size)
     end
+
+    UpdateCornerIconsPosition()
 end
 -- Editor mode interface
 function MinimapModule:LoadDefaultSettings()
