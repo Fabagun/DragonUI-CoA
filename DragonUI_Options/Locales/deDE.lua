@@ -1430,7 +1430,6 @@ L["Forever Frame"] = "Forever-Rahmen"
 L["Thin Line"] = "Dünne Linie"
 L["Top Arrow"] = "Pfeil oben"
 L["Rounded Corners"] = "Abgerundete Ecken"
-L["Decorations are only available for circular minimap styles."] = "Dekorationen gibt es nur für runde Minimap-Stile."
 
 -- Range Indicator colors
 L["Out of Range Color"] = "Farbe außer Reichweite"
