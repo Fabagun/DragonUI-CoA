@@ -15,6 +15,12 @@
 #  - A commit that conflicts also gets a branch conflict/<sha7> (conflict markers committed)
 #    and a DRAFT PR, so it can be resolved right there. Drafts can't be merged by accident.
 #  - Once a skipped commit is applied (trailer) or ignored, its issue and draft PR close themselves.
+#  - Every run ALSO re-checks commits whose issue is still open: when several commits touch the same
+#    file, resolving the last one often absorbs the earlier ones without leaving their trailer, so
+#    their issue would stay open (and masked) forever. If such a commit is now superseded (its
+#    change is already on the default branch) or simply no longer conflicts, its issue and draft PR
+#    are closed. Only branches still exactly as the bot pushed them are deleted; a branch with any
+#    human work on it is never closed, never force-pushed and only logged.
 #  - Discord gets ONE message per run, and only when something actually changed.
 #
 set -Eeuo pipefail
@@ -90,6 +96,7 @@ SKIPPED=()
 ISSUES=0
 DEFERRED=0
 OPEN_CONFLICT_PRS=0
+REEVALUATED=0
 
 # Is this 7-char prefix already applied on the default branch, or listed in .upstream-ignore?
 sha7_resolved() {
@@ -119,7 +126,7 @@ EOF
 
 # make_conflict_pr <sha> <conflicting files>   -> prints the draft PR url (or nothing)
 make_conflict_pr() {
-  local c="$1" files="$2" s7="${1:0:7}" br="conflict/${1:0:7}" wt url subject err
+  local c="$1" files="$2" s7="${1:0:7}" br="conflict/${1:0:7}" wt url subject err br_exists=0
   wt="$TMP/wt-${s7}"
   if is_dry; then log "(dry-run) would open a draft PR from ${br}"; return 0; fi
   if [ "$OPEN_CONFLICT_PRS" -ge "$MAX_OPEN_CONFLICT_PRS" ]; then
@@ -127,7 +134,18 @@ make_conflict_pr() {
   fi
   subject="$(git log -1 --format=%s "$c")"
 
-  if ! git ls-remote --exit-code --heads origin "$br" >/dev/null 2>&1; then
+  if git ls-remote --exit-code --heads origin "$br" >/dev/null 2>&1; then br_exists=1; fi
+
+  # The branch already exists: by default it is left exactly as it is (a human may be resolving it).
+  # Only an explicit retry_sha rebuilds it, and only while it is intact -- so a retry no longer needs
+  # the branch to be deleted first (which is what closed its PR and orphaned a brand new one).
+  if [ "$br_exists" = 1 ] && [ -n "$RETRY_SHA" ] && [[ "$c" == "$RETRY_SHA"* ]]; then
+    if ! rebuild_conflict_branch "$c"; then
+      return 0   # it no longer conflicts: branch and draft PR were retired, nothing to hand out
+    fi
+  fi
+
+  if [ "$br_exists" = 0 ]; then
     git worktree add -q -B "$br" "$wt" "origin/${DEFAULT_BRANCH}" >/dev/null 2>&1 || return 0
     if git -C "$wt" cherry-pick "$c" >/dev/null 2>&1 \
        || [ -z "$(git -C "$wt" diff --name-only --diff-filter=U)" ]; then
@@ -206,12 +224,226 @@ cleanup_resolved() {
              --jq '.[] | "\(.number) \(.title)"' 2>/dev/null || true)
 }
 
+# --------------------------------------------------------- re-evaluation ---
+# An open issue masks its commit (known_skipped), so the sync never looks at it again. That is how
+# commits whose change was absorbed by a later commit's resolution used to linger forever: open
+# issue, conflict branch frozen with stale markers, draft PR nobody can merge. The helpers below
+# re-examine those commits on every run and retire only what is provably obsolete.
+#
+# NOTE: every check below deliberately avoids `cmd | grep -q`. Under `set -o pipefail` grep exiting
+# early kills the producer with SIGPIPE and the pipeline reports 141, which would silently turn a
+# matching check into a non-matching one. Redirections and loop-reads only.
+
+# "Intact" = the branch is still exactly what make_conflict_pr() pushed: over the default branch it
+# holds exactly ONE commit that ADDS conflict markers and has NO "cherry picked from" trailer. If
+# any of that fails, the branch carries human work: never deleted, never force-pushed, never closed.
+branch_intact() {
+  local ref="$1" n f
+  if ! git rev-parse -q --verify "$ref" >/dev/null 2>&1; then return 1; fi
+  n="$(git rev-list --count "origin/${DEFAULT_BRANCH}..${ref}" 2>/dev/null || echo 0)"
+  if [ "$n" != "1" ]; then return 1; fi
+  f="$TMP/intact.log"
+  git log -1 --format=%B "$ref" > "$f" 2>/dev/null || true
+  if grep -qF 'cherry picked from commit' "$f"; then return 1; fi
+  git show --format= --unified=0 "$ref" > "$f" 2>/dev/null || true
+  if ! grep -q '^+<<<<<<<' "$f"; then return 1; fi
+  return 0
+}
+
+# Cherry-picks <sha> onto a throwaway worktree of origin/<DEFAULT_BRANCH> -- never on the sync
+# branch, never on the main working tree -- and always removes it again. Prints exactly one of:
+#   empty    = changes nothing: the change is already on the default branch
+#   clean    = applies with no conflict
+#   conflict = still conflicts
+#   error    = the probe could not run
+probe_pick() {
+  local c="$1" s7="${1:0:7}" wt="$TMP/probe-${1:0:7}" st logf
+  logf="$TMP/probe-${s7}.log"
+  git worktree remove --force "$wt" >/dev/null 2>&1 || true
+  rm -rf "$wt"
+  if ! git worktree add -q --detach "$wt" "origin/${DEFAULT_BRANCH}" >/dev/null 2>&1; then
+    git worktree prune >/dev/null 2>&1 || true
+    echo error
+    return 0
+  fi
+  if git -C "$wt" cherry-pick "$c" > "$logf" 2>&1; then
+    st=clean
+  elif [ -n "$(git -C "$wt" diff --name-only --diff-filter=U || true)" ]; then
+    st=conflict
+  elif grep -qi 'empty' "$logf"; then
+    st=empty
+  else
+    st=error
+  fi
+  git -C "$wt" cherry-pick --abort >/dev/null 2>&1 || true
+  git worktree remove --force "$wt" >/dev/null 2>&1 || true
+  rm -rf "$wt"
+  git worktree prune >/dev/null 2>&1 || true
+  echo "$st"
+}
+
+# Same as probe_pick(), but the verdict is remembered for the rest of the run: a commit is probed at
+# most ONCE per run, whichever code path asks about it.
+probe_cached() {
+  local c="$1" f="$TMP/verdict-${1:0:7}"
+  if [ -f "$f" ]; then cat "$f"; return 0; fi
+  probe_pick "$c" | tee "$f"
+  return 0
+}
+
+# Stops treating a commit as "already skipped" for the remainder of this run, so the candidate loop
+# reconsiders it right away (used right after its obsolete issue was closed).
+remove_known_skipped() {
+  local s="${1:0:7}"
+  : > "$TMP/issue_titles.tmp"
+  grep -vF -- "$s" "$TMP/issue_titles" > "$TMP/issue_titles.tmp" 2>/dev/null || true
+  mv "$TMP/issue_titles.tmp" "$TMP/issue_titles"
+}
+
+# Closes the open draft PR of conflict/<sha7> and deletes the branch -- but ONLY while the branch is
+# intact. Returns 0 when there is nothing left to protect or the branch was retired, 1 when it was
+# left alone because it carries manual work.
+close_conflict_if_intact() {
+  local s7="$1" comment="$2" br="conflict/${s7}" pr=""
+  if ! git rev-parse -q --verify "origin/${br}" >/dev/null 2>&1; then return 0; fi
+  if ! branch_intact "origin/${br}"; then
+    log "${br}: branch has manual work, leaving as is"
+    return 1
+  fi
+  if is_dry; then
+    log "(dry-run) would close the draft PR for ${br} and delete the branch"
+    return 0
+  fi
+  pr="$(gh pr list -R "$REPO" --head "$br" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
+  if [ -n "$pr" ]; then
+    gh pr close "$pr" -R "$REPO" --delete-branch --comment "$comment" >/dev/null 2>&1 || true
+    OPEN_CONFLICT_PRS=$((OPEN_CONFLICT_PRS - 1))
+  else
+    git push -q origin --delete "$br" >/dev/null 2>&1 || true
+  fi
+  return 0
+}
+
+# Explicit retry_sha only: rebuilds an EXISTING conflict/<sha7> against the current default branch,
+# and only while that branch is intact. When the commit now applies cleanly (or is empty), the branch
+# and its draft PR are retired instead. Returns 1 when the branch was retired, 0 otherwise.
+rebuild_conflict_branch() {
+  local c="$1" s7="${1:0:7}" br="conflict/${s7}" wt="$TMP/rebuild-${s7}" st expected
+  expected="$(git ls-remote --heads origin "refs/heads/${br}" 2>/dev/null || true)"
+  expected="${expected%%$'\n'*}"
+  expected="${expected%%$'\t'*}"
+  if [ -z "$expected" ]; then return 0; fi
+  if ! branch_intact "origin/${br}"; then
+    log "${br}: branch has manual work, leaving as is"
+    return 0
+  fi
+
+  st="$(probe_cached "$c")"
+  case "$st" in
+    clean|empty)
+      log "${s7} no longer conflicts against ${DEFAULT_BRANCH} (${st}); retiring ${br}"
+      close_conflict_if_intact "$s7" "No longer conflicts against ${DEFAULT_BRANCH}; it will be picked up by the sync PR." || true
+      return 1
+      ;;
+    conflict) : ;;
+    *)
+      log "${br}: could not re-check it against ${DEFAULT_BRANCH}; leaving as is"
+      return 0
+      ;;
+  esac
+
+  if is_dry; then log "(dry-run) would rebuild ${br} against ${DEFAULT_BRANCH}"; return 0; fi
+
+  git worktree remove --force "$wt" >/dev/null 2>&1 || true
+  rm -rf "$wt"
+  if ! git worktree add -q --detach "$wt" "origin/${DEFAULT_BRANCH}" >/dev/null 2>&1; then
+    log "could not create a worktree to rebuild ${br}"
+    git worktree prune >/dev/null 2>&1 || true
+    return 0
+  fi
+  # The pick below re-materializes the conflict: it is a rebuild, not another probe (the verdict
+  # comes from probe_cached, so this commit was tested at most once).
+  if ! git -C "$wt" cherry-pick "$c" > "$TMP/rebuild-${s7}.log" 2>&1; then
+    git -C "$wt" add -A
+    git -C "$wt" commit -q --no-verify -C "$c" || true
+    if git -C "$wt" push -q --force-with-lease="refs/heads/${br}:${expected}" origin "HEAD:refs/heads/${br}" >/dev/null 2>&1; then
+      log "rebuilt ${br} against ${DEFAULT_BRANCH} (was ${expected:0:7})"
+    else
+      log "could not rebuild ${br} (pushed to in the meantime?); leaving as is"
+    fi
+  fi
+  git -C "$wt" cherry-pick --abort >/dev/null 2>&1 || true
+  git worktree remove --force "$wt" >/dev/null 2>&1 || true
+  rm -rf "$wt"
+  git worktree prune >/dev/null 2>&1 || true
+  return 0
+}
+
+# Re-examines every commit that still has an OPEN "skipped" issue and retires what no longer needs a
+# human: the change already reached the default branch (superseded) or it now applies cleanly. A
+# commit that still conflicts, or whose branch a human already touched, is left completely alone.
+reevaluate_open_issues() {
+  local line n title s7 c st note
+  git rev-list "upstream/${UPSTREAM_BRANCH}" > "$TMP/upstream_shas" 2>/dev/null || true
+
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    n="${line%% *}"; title="${line#* }"
+    if [[ ! "$title" =~ Upstream\ skipped:\ ([0-9a-f]{7}) ]]; then continue; fi
+    s7="${BASH_REMATCH[1]}"
+    # Applied (trailer) or ignored is cleanup_resolved()'s job: don't duplicate that logic here.
+    if sha7_resolved "$s7"; then continue; fi
+
+    c="$(grep -m1 "^${s7}" "$TMP/upstream_shas" 2>/dev/null || true)"
+    if [ -z "$c" ]; then
+      log "issue #${n}: ${s7} is no longer in upstream/${UPSTREAM_BRANCH}; leaving as is"
+      continue
+    fi
+
+    REEVALUATED=$((REEVALUATED + 1))
+    st="$(probe_cached "$c")"
+    case "$st" in
+      empty|clean)
+        if [ "$st" = empty ]; then
+          note="Superseded: its changes are already on ${DEFAULT_BRANCH}."
+          log "issue #${n}: ${s7} is superseded, its changes are already on ${DEFAULT_BRANCH}"
+        else
+          note="No longer conflicts against ${DEFAULT_BRANCH}; it will be picked up by the sync PR."
+          log "issue #${n}: ${s7} no longer conflicts against ${DEFAULT_BRANCH}; it goes into the sync PR"
+        fi
+        if ! close_conflict_if_intact "$s7" "$note"; then
+          log "issue #${n} left open as well: conflict/${s7} carries manual work"
+          continue
+        fi
+        if is_dry; then
+          log "(dry-run) would close issue #${n}"
+        elif ! gh issue close "$n" -R "$REPO" --reason completed --comment "$note" >/dev/null 2>&1; then
+          log "warning: could not close issue #${n}"
+        fi
+        # No longer masked for this run, so the candidate loop reconsiders the commit right now.
+        remove_known_skipped "$c"
+        ;;
+      conflict)
+        log "issue #${n}: ${s7} still conflicts against ${DEFAULT_BRANCH}; leaving as is"
+        ;;
+      *)
+        log "issue #${n}: could not re-check ${s7} against ${DEFAULT_BRANCH}; leaving as is"
+        ;;
+    esac
+  done < <(gh issue list -R "$REPO" --label upstream-conflict --state open --limit 1000 \
+             --json number,title --jq '.[] | "\(.number) \(.title)"' 2>/dev/null || true)
+}
+
 # skip_commit <sha> <reason> [details]
 skip_commit() {
-  local c="$1" reason="$2" details="${3:-}" s7 subject title body pr_url="" line
+  local c="$1" reason="$2" details="${3:-}" s7 subject title body pr_url="" line reuse=false
   s7="${c:0:7}"
   subject="$(git log -1 --format=%s "$c")"
   line="${BT}${s7}${BT} ${subject} — ${reason%%$'\n'*}"
+
+  # One open issue per commit, ever: a retry_sha run walks over the same commit again, and the issue
+  # is already the durable record for it. Reuse that one instead of opening a duplicate.
+  if known_skipped "$c"; then reuse=true; fi
 
   if [ "$ISSUES" -ge "$MAX_ISSUES" ]; then
     DEFERRED=$((DEFERRED + 1)); SKIPPED+=("$line"); return 0
@@ -266,7 +498,18 @@ Actions → *Sync upstream* → *Run workflow* → ${BT}retry_sha${BT} = ${BT}${
 EOF
 )"
 
-  if is_dry; then log "(dry-run) would open issue: $title"; return 0; fi
+  if is_dry; then
+    if [ "$reuse" = true ]; then
+      log "(dry-run) issue for ${s7} is already open; would not open a duplicate"
+    else
+      log "(dry-run) would open issue: $title"
+    fi
+    return 0
+  fi
+  if [ "$reuse" = true ]; then
+    log "issue for ${s7} is already open; reusing it instead of opening a duplicate"
+    return 0
+  fi
   if gh issue create -R "$REPO" --label upstream-conflict --assignee "${OWNER:-$REPO}" \
         --title "$title" --body "$body" >/dev/null 2>&1 \
      || gh issue create -R "$REPO" --label upstream-conflict \
@@ -324,6 +567,9 @@ gh issue list -R "$REPO" --label upstream-conflict --state open --limit 1000 \
 
 # Close issues / draft PRs that were resolved since the last run
 cleanup_resolved
+
+# Re-check the commits that still have an open issue: some of them no longer need a human at all.
+reevaluate_open_issues
 
 # Build the branch from the default branch
 git checkout -q -f -B "$SYNC_BRANCH" "origin/${DEFAULT_BRANCH}"
@@ -387,7 +633,7 @@ for c in "${CANDIDATES[@]}"; do
   fi
 done
 
-log "picked=${#PICKED[@]} skipped_now=${#SKIPPED[@]} skipped_before=${KNOWN} already_applied=${ALREADY}"
+log "picked=${#PICKED[@]} skipped_now=${#SKIPPED[@]} skipped_before=${KNOWN} already_applied=${ALREADY} reevaluated=${REEVALUATED}"
 
 # ------------------------------------------------------- PR bookkeeping ---
 PR_NUM="$(gh pr list -R "$REPO" --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty' 2>/dev/null || true)"
@@ -513,6 +759,7 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     echo "### Sync upstream"
     echo "- picked (in PR): ${#PICKED[@]}"
     echo "- skipped now: ${#SKIPPED[@]}  |  skipped earlier: ${KNOWN}  |  already applied: ${ALREADY}"
+    echo "- open issues re-evaluated: ${REEVALUATED}"
     if [ -n "$PR_URL" ]; then echo "- PR: ${PR_URL}"; fi
     echo "- run: ${RUN_URL}"
   } >> "$GITHUB_STEP_SUMMARY"
