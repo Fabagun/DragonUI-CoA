@@ -949,7 +949,10 @@ L["Retail-style quest and gossip window chrome"] = "Marco estilo Retail para as 
 L["Sell all junk items"] = "Vender todos os itens lixo"
 L["Sell all of your junk (gray) items?"] = "Vender todos os seus itens lixo (cinzas)?"
 L["You are about to sell all junk items and will not be able to buy them back.\n\nAre you sure you want to proceed?"] = "Você está prestes a vender todos os itens lixo e não poderá mais comprá-los de volta.\n\nTem certeza de que deseja prosseguir?"
-L["Sold %d junk item(s)."] = "Vendido %d item(ns) lixo."
+L["Repaired all items for %s."] = "Todos os itens reparados por %s."
+L["Repaired all items for %s using guild funds."] = "Todos os itens reparados por %s usando fundos da guilda."
+L["Not enough gold to repair all items."] = "Ouro insuficiente para reparar todos os itens."
+L["Sold %d junk item(s) for %s."] = "Vendido %d item(ns) lixo por %s."
 
 -- World Map
 L["World Map"] = "Mapa-múndi"

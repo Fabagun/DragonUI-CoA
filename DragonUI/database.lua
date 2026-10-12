@@ -630,6 +630,7 @@ local defaults = {
             animated_border_enabled = false,
             animated_border_scale = 0.9,
             animated_border_preset = "drg_preset_01",
+            animated_border_square_preset = "drg_square_01",
             animated_border_animations = true,
             animated_border_opacity = 1,
             animated_border_hide_dragonui_border = false,
@@ -852,6 +853,7 @@ local defaults = {
                 orientation = 'vertical',
                 padding_vertical = 30,
                 padding_horizontal = 50,
+                pvp_icon_style = "classic", -- not "auto": party keeps the classic icon on the Forever art too
                 scale = 1.0,
                 override = false,
                 anchor = 'TOPLEFT',
@@ -995,7 +997,10 @@ local defaults = {
                 disable_form_page_switching = false -- When true, the main action bar stays on the same page regardless of stance/form changes (druid shapeshift, warrior stance, CoA custom classes, etc.)
             },
             merchant = {
-                enabled = true -- Retail-style vendor window chrome, sell-all-junk button, and buyback undo arrow
+                enabled = true, -- Retail-style vendor window chrome, sell-all-junk button, and buyback undo arrow
+                autoRepair = false, -- Repair all items automatically when a merchant window opens
+                autoRepairGuild = false, -- Pay for automatic repairs with guild bank funds when they cover the cost
+                autoSellJunk = false -- Sell all grey (junk) items automatically when a merchant window opens
             },
             questdialog = {
                 enabled = true -- Retail-style quest and gossip window chrome

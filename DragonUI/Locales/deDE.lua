@@ -726,7 +726,10 @@ L["Quest Dialog"] = "Questdialog"
 L["Retail-style quest and gossip window chrome"] = "Retail-Style Rahmen für Quest- und Gesprächsfenster"
 L["Sell all junk items"] = "Alle Schrottgegenstände verkaufen"
 L["You are about to sell all junk items and will not be able to buy them back.\n\nAre you sure you want to proceed?"] = "Du bist dabei, alle Schrottgegenstände zu verkaufen und kannst sie danach nicht mehr zurückkaufen.\n\nMöchtest du wirklich fortfahren?"
-L["Sold %d junk item(s)."] = "%d Schrottgegenstand(e) verkauft."
+L["Repaired all items for %s."] = "Alle Gegenstände für %s repariert."
+L["Repaired all items for %s using guild funds."] = "Alle Gegenstände für %s mit Gildenmitteln repariert."
+L["Not enough gold to repair all items."] = "Nicht genug Gold, um alle Gegenstände zu reparieren."
+L["Sold %d junk item(s) for %s."] = "%d Schrottgegenstand(e) für %s verkauft."
 
 -- World Map
 L["World Map"] = "Weltkarte"
