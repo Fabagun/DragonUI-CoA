@@ -465,6 +465,18 @@ skip_commit() {
   # is already the durable record for it. Reuse that one instead of opening a duplicate.
   if known_skipped "$c"; then reuse=true; fi
 
+  # Quiet path. A commit whose issue is already open only gets here when the bot itself re-tried it
+  # (reevaluate_open_issues found it clean against the default branch, so it is picked again on top
+  # of the pending commits and may collide with one of them). That is the SAME situation as in the
+  # previous run: the issue is already the record of it, so do not list it as "skipped" again --
+  # that would repeat the Discord message and the PR-body line every 30 minutes. An explicit
+  # retry_sha is a manual run: it still reports.
+  if [ "$reuse" = true ] && ! { [ -n "$RETRY_SHA" ] && [[ "$c" == "$RETRY_SHA"* ]]; }; then
+    KNOWN=$((KNOWN + 1))
+    log "issue for ${s7} is already open; reusing it, not reporting it again (${reason%%$'\n'*})"
+    return 0
+  fi
+
   if [ "$ISSUES" -ge "$MAX_ISSUES" ]; then
     DEFERRED=$((DEFERRED + 1)); SKIPPED+=("$line"); return 0
   fi
