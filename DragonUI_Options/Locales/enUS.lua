@@ -1813,3 +1813,16 @@ L["Side Tabs Scale"] = true
 L["Scales only the profession tabs beside the window, on top of the window scale."] = true
 L["Professions Micro Button"] = true
 L["Show the Professions button in the micro menu. It opens the professions overview."] = true
+
+-- ============================================================================
+-- Layout Presets & remaining option strings (default locale)
+-- ============================================================================
+L["Layout Presets"] = true
+L["Save and restore complete UI layouts. Each preset captures all positions, scales, and settings."] = true
+L["Save New Preset"] = true
+L["Save your current UI layout as a new preset."] = true
+L["No presets saved yet."] = true
+L["Scale"] = true
+L["Border Style"] = true
+L["Display"] = true
+L["Bar Visibility"] = true

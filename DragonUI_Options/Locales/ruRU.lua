@@ -1875,3 +1875,15 @@ L["Side Tabs Scale"] = "Масштаб боковых вкладок"
 L["Scales only the profession tabs beside the window, on top of the window scale."] = "Масштабирует только вкладки профессий рядом с окном, поверх масштаба окна."
 L["Professions Micro Button"] = "Кнопка профессий в микроменю"
 L["Show the Professions button in the micro menu. It opens the professions overview."] = "Показывать кнопку профессий в микроменю. Она открывает обзор профессий."
+
+-- ============================================================================
+-- Layout Presets & remaining option strings (missing translations)
+-- ============================================================================
+L["Layout Presets"] = "Шаблоны раскладки"
+L["Save and restore complete UI layouts. Each preset captures all positions, scales, and settings."] = "Сохраняйте и восстанавливайте полные раскладки интерфейса. Каждый шаблон сохраняет все позиции, масштабы и настройки."
+L["Save New Preset"] = "Сохранить новый шаблон"
+L["Save your current UI layout as a new preset."] = "Сохранить текущую раскладку интерфейса как новый шаблон."
+L["No presets saved yet."] = "Шаблоны ещё не сохранены."
+L["Border Style"] = "Стиль рамки"
+L["Display"] = "Отображение"
+L["Bar Visibility"] = "Видимость панелей"

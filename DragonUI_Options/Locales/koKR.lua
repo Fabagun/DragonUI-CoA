@@ -1877,3 +1877,16 @@ L["Side Tabs Scale"] = "측면 탭 크기"
 L["Scales only the profession tabs beside the window, on top of the window scale."] = "창 크기와 별도로 창 옆의 전문 기술 탭 크기만 조절합니다."
 L["Professions Micro Button"] = "마이크로 메뉴 전문 기술 버튼"
 L["Show the Professions button in the micro menu. It opens the professions overview."] = "마이크로 메뉴에 전문 기술 버튼을 표시합니다. 전문 기술 개요를 엽니다."
+
+-- ============================================================================
+-- Layout Presets & remaining option strings (missing translations)
+-- ============================================================================
+L["Layout Presets"] = "레이아웃 프리셋"
+L["Save and restore complete UI layouts. Each preset captures all positions, scales, and settings."] = "완전한 UI 레이아웃을 저장하고 복원합니다. 각 프리셋은 모든 위치, 배율, 설정을 포함합니다."
+L["Save New Preset"] = "새 프리셋 저장"
+L["Save your current UI layout as a new preset."] = "현재 UI 레이아웃을 새 프리셋으로 저장합니다."
+L["No presets saved yet."] = "아직 저장된 프리셋이 없습니다."
+L["Scale"] = "크기 비율"
+L["Border Style"] = "테두리 스타일"
+L["Display"] = "표시"
+L["Bar Visibility"] = "단축바 표시 설정"

@@ -1883,3 +1883,16 @@ L["Side Tabs Scale"] = "侧边标签缩放"
 L["Scales only the profession tabs beside the window, on top of the window scale."] = "仅缩放窗口旁的专业标签，叠加在窗口缩放之上。"
 L["Professions Micro Button"] = "微型菜单专业按钮"
 L["Show the Professions button in the micro menu. It opens the professions overview."] = "在微型菜单中显示专业按钮，点击打开专业总览。"
+
+-- ============================================================================
+-- Layout Presets & remaining option strings (missing translations)
+-- ============================================================================
+L["Layout Presets"] = "布局预设"
+L["Save and restore complete UI layouts. Each preset captures all positions, scales, and settings."] = "保存和恢复完整的界面布局。每个预设包含所有位置、缩放和设置。"
+L["Save New Preset"] = "保存新预设"
+L["Save your current UI layout as a new preset."] = "将当前界面布局保存为新预设。"
+L["No presets saved yet."] = "尚未保存任何预设。"
+L["Scale"] = "缩放比例"
+L["Border Style"] = "边框样式"
+L["Display"] = "显示"
+L["Bar Visibility"] = "动作条可见性"

@@ -2307,3 +2307,16 @@ L["Side Tabs Scale"] = "Escala das abas laterais"
 L["Scales only the profession tabs beside the window, on top of the window scale."] = "Ajusta só as abas de profissão ao lado da janela, além da escala da janela."
 L["Professions Micro Button"] = "Botão de profissões do Micro Menu"
 L["Show the Professions button in the micro menu. It opens the professions overview."] = "Mostra o botão de profissões no Micro Menu. Ele abre o resumo das profissões."
+
+-- ============================================================================
+-- Layout Presets & remaining option strings (missing translations)
+-- ============================================================================
+L["Layout Presets"] = "Predefinições de Layout"
+L["Save and restore complete UI layouts. Each preset captures all positions, scales, and settings."] = "Salve e restaure layouts completos de interface. Cada predefinição captura todas as posições, escalas e configurações."
+L["Save New Preset"] = "Salvar Nova Predefinição"
+L["Save your current UI layout as a new preset."] = "Salvar o layout atual da interface como nova predefinição."
+L["No presets saved yet."] = "Nenhuma predefinição salva ainda."
+L["Scale"] = "Escala"
+L["Border Style"] = "Estilo da borda"
+L["Display"] = "Exibição"
+L["Bar Visibility"] = "Visibilidade das barras"

@@ -1879,3 +1879,16 @@ L["Side Tabs Scale"] = "Skalierung der Seitenreiter"
 L["Scales only the profession tabs beside the window, on top of the window scale."] = "Skaliert nur die Berufsreiter neben dem Fenster, zusätzlich zur Fensterskalierung."
 L["Professions Micro Button"] = "Berufe-Knopf im Mikromenü"
 L["Show the Professions button in the micro menu. It opens the professions overview."] = "Zeigt den Berufe-Knopf im Mikromenü. Er öffnet die Berufsübersicht."
+
+-- ============================================================================
+-- Layout Presets & remaining option strings (missing translations)
+-- ============================================================================
+L["Layout Presets"] = "Layout-Vorlagen"
+L["Save and restore complete UI layouts. Each preset captures all positions, scales, and settings."] = "Speichern und Wiederherstellen kompletter UI-Layouts. Jede Vorlage erfasst alle Positionen, Skalierungen und Einstellungen."
+L["Save New Preset"] = "Neue Vorlage speichern"
+L["Save your current UI layout as a new preset."] = "Aktuelles UI-Layout als neue Vorlage speichern."
+L["No presets saved yet."] = "Noch keine Vorlagen gespeichert."
+L["Scale"] = "Skalierung"
+L["Border Style"] = "Rahmenstil"
+L["Display"] = "Anzeige"
+L["Bar Visibility"] = "Leisten-Sichtbarkeit"
