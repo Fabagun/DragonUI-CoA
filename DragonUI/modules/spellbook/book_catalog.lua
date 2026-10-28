@@ -549,9 +549,17 @@ function Book.BuildSections(cat, filters)
     return petSections(filters)
 end
 
+-- The client names the pet tab _G["PET_TYPE_"..token] and still shows the button when the global
+-- is missing. CoA hands out pet tokens with no matching global (e.g. "arrior" for a Primalist
+-- beast), and a nil label would hide the whole tab, so fall back to the stock pet name.
+local function petLabel(token)
+    local label = token and _G["PET_TYPE_" .. token]
+    return label or _G["PET_TYPE_PET"] or "Pet"
+end
+
 function Book.CategoryLabel(cat)
     if cat == Book.CLASS then return (UnitClass("player")) end
     if cat == Book.GENERAL then return (GetSpellTabInfo(1)) end
     local _, token = Book.PetBook()
-    return _G["PET_TYPE_" .. (token or "PET")]
+    return petLabel(token)
 end
