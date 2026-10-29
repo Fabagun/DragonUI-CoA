@@ -196,6 +196,8 @@ MicromenuAtlas["UI-HUD-MicroMenu-Professions-Down"] = {0.25, 0.5, 0, 0.3203125, 
 MicromenuAtlas["UI-HUD-MicroMenu-Professions-Mouseover"] = {0.5, 0.75, 0, 0.3203125, PROFESSIONS_MICRO}
 MicromenuAtlas["UI-HUD-MicroMenu-Professions-Disabled"] = {0.75, 1, 0, 0.3203125, PROFESSIONS_MICRO}
 
+local MICRO_COLOR_SHEET = 'Interface\\AddOns\\DragonUI\\Textures\\Micromenu\\uimicromenu2x'
+
 
 -- ============================================================================
 -- SECTION 3: UTILITY FUNCTIONS
@@ -436,6 +438,9 @@ local function GetAtlasKey(buttonName)
             questlog = "UI-HUD-MicroMenu-Questlog",
             socials = "UI-HUD-MicroMenu-GuildCommunities",
             lfd = "UI-HUD-MicroMenu-Groupfinder",
+            -- The CoA strip carries Collections too; without this key it fell through to the
+            -- grayscale atlas branch and stopped matching its neighbours.
+            collections = "UI-HUD-MicroMenu-Collections",
             pathtoascension = "UI-HUD-MicroMenu-PathToAscension",
             challenges = "UI-HUD-MicroMenu-Challenges",
             mainmenu = "UI-HUD-MicroMenu-Shop",
@@ -472,6 +477,24 @@ local function GetColoredTextureCoords(buttonName, textureType)
         return coords
     end
     return nil
+end
+
+-- Grayscale states are DragonUI's own sheet cells, registered in addon.atlasinfo by utils/atlas.lua.
+-- InjectWidgetAPI installs our SetAtlasTexture shim on widgets that lack it, and that shim errors on
+-- a name it does not know -- so the two buttons Conquest of Azeroth ships that retail never had (Path
+-- to Ascension, Challenges) threw here and aborted the whole strip pass, leaving 9 of 13 drawn.
+-- Resolve our own entry first, then fall back to the colored crop those two do have.
+local function SetGrayStateTexture(buttonName, texture, atlasSuffix, coloredSuffix)
+    if not texture then return end
+    local atlasName = 'ui-hud-micromenu-' .. buttonName .. '-' .. atlasSuffix .. '-2x'
+    if addon.atlasinfo and addon.atlasinfo[atlasName] then
+        texture:SetAtlasTexture(atlasName)
+        return
+    end
+    local coords = GetColoredTextureCoords(buttonName, coloredSuffix)
+    if not coords then return end
+    texture:SetTexture(coords[5] or MICRO_COLOR_SHEET)
+    texture:SetTexCoord(coords[1], coords[2], coords[3], coords[4])
 end
 
 -- Handler management
@@ -2051,17 +2074,19 @@ local function layoutMicroButtons(xOffset)
                     button.DragonUIHover:Hide()
                 end
 
-                if normalTexture then
-                    normalTexture:SetAtlasTexture('ui-hud-micromenu-' .. name .. '-up-2x')
-                end
-                if pushedTexture then
-                    pushedTexture:SetAtlasTexture('ui-hud-micromenu-' .. name .. '-down-2x')
-                end
-                if disabledTexture then
-                    disabledTexture:SetAtlasTexture('ui-hud-micromenu-' .. name .. '-disabled-2x')
-                end
-                if highlightTexture then
-                    highlightTexture:SetAtlasTexture('ui-hud-micromenu-' .. name .. '-mouseover-2x')
+                SetGrayStateTexture(name, normalTexture, 'up', 'Up')
+                SetGrayStateTexture(name, pushedTexture, 'down', 'Down')
+                SetGrayStateTexture(name, disabledTexture, 'disabled', 'Disabled')
+                SetGrayStateTexture(name, highlightTexture, 'mouseover', 'Mouseover')
+
+                -- A state texture the button did not bring from its own XML (Pets & Mounts builds its
+                -- button in Lua) keeps no anchor and would draw at the atlas cell's own size. Pin all
+                -- four to the button, as the colored branch does, so the crop is the button's size.
+                for _, stateTexture in ipairs({normalTexture, pushedTexture, disabledTexture, highlightTexture}) do
+                    if stateTexture then
+                        stateTexture:ClearAllPoints()
+                        stateTexture:SetAllPoints(button)
+                    end
                 end
             elseif isPVPButton then
                 SetupPVPButton(button)
